@@ -2,8 +2,61 @@
 This module contains helper functions to aid the different functionality of the bot.
 """
 import re
-from utils.setup import EXAMPLE_COMMAND, MENTION_REGEX, GREETINGS, slack_client, starterbot_id
-from utils.api_wrappers import post_message
+from utils.setup import (EXAMPLE_COMMAND, MENTION_REGEX, GREETINGS, slack_client,
+                            starterbot_id, Labels, city_name_userid, msg_to_resp)
+from utils.api_wrappers import post_message, get_weather_and_location
+
+
+def classify_message(msg, userid=None):
+    """
+        Classifies the message into buckets.
+    """
+    if msg.startswith(EXAMPLE_COMMAND):
+        return Labels.example.name
+    elif msg.startswith("Welcome"):
+        return Labels.greeting.name
+    elif re.search(r'(.*) weather|weather in (.*)|(.*)\'s weather ', msg, re.I|re.M):
+        return Labels.weather.name
+    elif re.search(r'weather', msg, re.I|re.M):
+        return Labels.weather_my_loc.name
+    else:
+        return Labels.default.name
+
+def get_city_name(msg, user_id=None):
+    """
+        Extract the city name for the message.
+    """
+    if re.search(r'(.*) weather|weather in (.*)|(.*)\'s weather ', msg, re.I|re.M):
+        mtch = re.search(r'(.*) weather|weather in (.*)|(.*)\'s weather ', msg, re.I|re.M)
+        city = next((x for x in mtch.groups() if x is not None), None)
+            # filter(lambda x: x is not None, mtch.groups()), None)
+    else:
+        city = city_name_userid.get(user_id, labels.dnt_knw_loc.name)
+    return city
+
+def get_weather_in_city(city):
+    """
+        Get the weather conditions in a given city.
+    """
+    try:
+        w, l = get_weather_and_location(place=city)
+
+        status = w.get_status()
+        temp = w.get_temperature(unit='celsius')
+        temp_cur = temp.get('temp', 0)
+        temp_max = temp.get('temp_max', float('inf'))
+        temp_min = temp.get('temp_min', float('-inf'))
+        unit = 'Celsius'
+
+        weather = """The weather in {city} is {status}. The current temperature is {cur} {unit} \
+and is expected to have a high of {max} {unit} and a \
+low of {min} {unit}""".format(city=city, status=status, cur=temp_cur, max=temp_max,
+                                  min=temp_min, unit=unit)
+    except Exception:
+        weather = """I'm sorry; I'm still learning. I'm currently unable to find the weather \
+of {city}. May be the city has other names? Have you tried them?""".format(city=city)
+    return weather
+
 
 def parse_bot_commands(slack_events):
     """
@@ -15,15 +68,14 @@ def parse_bot_commands(slack_events):
 
         if event["type"] == "member_joined_channel" and event["user"] != starterbot_id:
             user_id, channel = event["user"], event["channel"]
-            message = "Welcome <@{user_id}> to the channel <#{channel}>\
-            ! Hope you have a good time here!".format(user_id=user_id, channel=channel)
-            return message, channel
+            message = "Welcome!!"
+            return message, channel, user_id
 
         if event["type"] == "message" and not "subtype" in event:
             user_id, message = parse_direct_mention(event["text"])
             if user_id == starterbot_id:
-                return message, event["channel"]
-    return None, None
+                return message, event["channel"], user_id
+    return None, None, None
 
 def parse_direct_mention(message_text):
     """
@@ -34,21 +86,21 @@ def parse_direct_mention(message_text):
     # the first group contains the username, the second group contains the remaining message
     return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
 
-def handle_command(command, channel):
+def handle_command(command, channel, user_id=None):
     """
         Executes bot command if the command is known
     """
-    # Default response is help text for the user
-    default_response = "Not sure what you mean. Try *{}*.".format(EXAMPLE_COMMAND)
 
-    # Finds and executes the given command, filling in response
-    response = None
+    msg = classify_message(command)
 
-    # This is where you start to implement more commands!
-    if command.startswith(EXAMPLE_COMMAND):
-        response = "Sure...write some more code then I can do that!"
-    elif command.startswith(GREETINGS):
-        response = command
+    # Use the classified message to obtain the corresponding response
+    response = msg_to_resp.get(msg, None)
+
+    if msg == Labels.greeting.name:
+        response = response.format(user_id=user_id, channel=channel)
+    elif msg in [Labels.weather.name, Labels.weather_my_loc.name]:
+        city = get_city_name(command, user_id)
+        response = get_weather_in_city(city)
 
     # Sends the response back to the channel
     post_message(msg=response or default_response, channel=channel)

@@ -3,7 +3,7 @@ This module includes the wrappers written for the slack APIs from SlackClient li
 
 Author: Ashwin Karthik Tamilselvan
 """
-from utils.setup import slack_client
+from utils.setup import slack_client, owm
 
 def post_message(msg, channel, timestamp=None, user=None):
     """
@@ -43,3 +43,20 @@ def remove_reaction(emoji, channel, timestamp):
     """
     return slack_client.api_call("reactions.remove", channel=channel,
                                  name=emoji, timestamp=timestamp)
+
+# API Wrappers for OWM
+
+def get_weather_and_location(place=None, cityid=None, coords=None, zipcode=None):
+    """
+    Extract the weather and location object for a given location attribute.
+    """
+    if cityid:
+        o = owm.weather_at_id(cityid)
+    elif coords:
+        o = owm.weather_at_coords(coords) 
+    elif zipcode:
+        o = owm.weather_at_zip_code(zipcode)
+    else:
+        o = owm.weather_at_place(place)
+
+    return o.get_weather(), o.get_location()
