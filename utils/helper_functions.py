@@ -41,7 +41,7 @@ def get_weather_in_city(city):
     try:
         w, l = get_weather_and_location(place=city)
 
-        status = w.get_status()
+        status = w.get_detailed_status()
         temp = w.get_temperature(unit='celsius')
         temp_cur = temp.get('temp', 0)
         temp_max = temp.get('temp_max', float('inf'))
